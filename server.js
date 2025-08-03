@@ -1,23 +1,46 @@
-const express = require("express");
-const path = require("path");
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const app = express();
-
 const PORT = process.env.PORT || 3000;
-const latestVersion = "Paked V3.0";
 
-// Serve static files in the builds directory
-app.use("/builds", express.static(path.join(__dirname, "builds")));
+const buildsDir = path.join(__dirname, 'builds');
 
-// Route to get the latest build metadata
-app.get("/latest-version", (req, res) => {
-  res.json({ version: latestVersion });
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Allow CORS for your frontend
+  next();
 });
 
-// Route to get the HTML of the latest version
-app.get("/latest-build", (req, res) => {
-  res.sendFile(path.join(__dirname, "builds", `${latestVersion}.html`));
+app.get('/latest-build', (req, res) => {
+  fs.readdir(buildsDir, (err, files) => {
+    if (err) return res.status(500).send('Could not read builds folder');
+
+    // Filter only .html files
+    const htmlFiles = files.filter(file => file.endsWith('.html'));
+    if (htmlFiles.length === 0) {
+      return res.status(404).send('No builds available');
+    }
+
+    // Extract version numbers from filenames and sort descending
+    const sortedFiles = htmlFiles.sort((a, b) => {
+      const getVersion = (filename) => {
+        // Example filename: "Paked V3.2.html"
+        // Extract number after "V"
+        const match = filename.match(/V(\d+(\.\d+)?)/);
+        return match ? parseFloat(match[1]) : 0;
+      };
+      return getVersion(b) - getVersion(a);
+    });
+
+    const newestBuild = sortedFiles[0];
+    const newestBuildPath = path.join(buildsDir, newestBuild);
+
+    // Send the newest build file
+    res.sendFile(newestBuildPath);
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
+th
