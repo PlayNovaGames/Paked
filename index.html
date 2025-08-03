@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Paked Launcher</title>
+<style>
+  body, html {
+    margin: 0; padding: 0; font-family: Arial, sans-serif; background: #1e1e2f; color: white; height: 100%;
+  }
+  .top-bar {
+    background: #2c2c3c; padding: 10px 20px; display: flex; align-items: center; height: 50px; z-index: 3; position: relative;
+  }
+  .top-bar h1 {
+    margin: 0; font-size: 18px;
+  }
+  .side-panel {
+    position: absolute; top: 50px; left: 0; width: 60px; height: calc(100% - 50px); background: #2a2a3a; transition: width 0.3s ease; overflow-y: auto; overflow-x: hidden; z-index: 3;
+  }
+  .side-panel.expanded {
+    width: 300px;
+  }
+  .side-panel button.toggle-btn {
+    background: transparent; border: none; color: white; width: 100%; padding: 15px; text-align: left; cursor: pointer; font-size: 16px;
+  }
+  .panel-section {
+    margin-top: 10px; padding: 0 10px;
+  }
+  .panel-section.hidden {
+    display: none;
+  }
+  .panel-section h2 {
+    font-size: 16px; border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 8px;
+  }
+  .build-item {
+    display: flex; justify-content: space-between; align-items: center; padding: 10px; margin-bottom: 5px; background: #3a3a4a; border-radius: 5px; font-size: 16px; user-select: none;
+  }
+  .build-item.downloadable {
+    cursor: pointer; color: #76c7c0;
+  }
+  .build-item.downloadable:hover {
+    background: #4a4a5a;
+  }
+  .build-item.downloaded {
+    opacity: 0.5; cursor: default; color: #aaa;
+  }
+  .build-actions {
+    display: flex; gap: 5px;
+  }
+  .build-actions button {
+    background: #555; border: none; color: white; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 14px;
+  }
+  .download-icon {
+    margin-right: 8px; font-weight: bold; color: #76c7c0; user-select: none;
+  }
+  .divider {
+    height: 1px; background: #444; margin: 10px 0;
+  }
+  .divider.hidden {
+    display: none;
+  }
+  .content {
+    margin-left: 60px; margin-top: 50px; padding: 20px; transition: margin-left 0.3s ease; position: relative; z-index: 2;
+  }
+  .side-panel.expanded ~ .content {
+    margin-left: 300px;
+  }
+  .play-section {
+    text-align: center; margin-top: 100px;
+  }
+  .play-button {
+    padding: 20px 50px; font-size: 24px; background: #28a745; border: none; border-radius: 5px; color: white; cursor: pointer;
+  }
+  .progress-bar {
+    margin-top: 20px; width: 300px; height: 20px; background: #444; border-radius: 10px; overflow: hidden; display: none; margin-left: auto; margin-right: auto;
+  }
+  .progress-fill {
+    height: 100%; background: #76c7c0; width: 0%; transition: width 0.2s ease-in-out;
+  }
+  .iframe-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 9999; opacity: 0; transition: opacity 0.5s ease; pointer-events: none;
+  }
+  .iframe-overlay.visible {
+    opacity: 1; pointer-events: all;
+  }
+  .iframe-overlay iframe {
+    width: 100%; height: 100%; border: none;
+  }
+</style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>Paked Launcher V2.0</h1>
+  </div>
+  <div id="sidePanel" class="side-panel">
+    <button class="toggle-btn" onclick="toggleSidePanel()">☰</button>
+
+    <div id="localBuildsSection" class="panel-section hidden">
+      <h2>Downloaded Builds</h2>
+      <div id="localBuilds"></div>
+    </div>
+
+    <div id="divider" class="divider hidden"></div>
+
+    <div id="downloadableBuildsSection" class="panel-section hidden">
+      <h2>Downloadable Builds</h2>
+      <div id="downloadableBuilds"></div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="play-section">
+      <button class="play-button" onclick="playLatestBuild()">Play Latest Build</button>
+      <div class="progress-bar" id="progressBar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="iframeContainer" class="iframe-overlay">
+    <iframe id="gameIframe"></iframe>
+  </div>
+
+<script>
+  let sidePanelExpanded = false;
+  let currentDownloadableBuilds = [];
+
+  function toggleSidePanel() {
+    sidePanelExpanded = !sidePanelExpanded;
+    const panel = document.getElementById("sidePanel");
+    const localSection = document.getElementById("localBuildsSection");
+    const downloadableSection = document.getElementById("downloadableBuildsSection");
+    const divider = document.getElementById("divider");
+
+    if (sidePanelExpanded) {
+      panel.classList.add("expanded");
+      // Show sections only if they have content
+      if (hasLocalBuilds()) localSection.classList.remove("hidden"); else localSection.classList.add("hidden");
+      if (hasDownloadableBuilds()) downloadableSection.classList.remove("hidden"); else downloadableSection.classList.add("hidden");
+      if (hasLocalBuilds() && hasDownloadableBuilds()) divider.classList.remove("hidden");
+      else divider.classList.add("hidden");
+    } else {
+      panel.classList.remove("expanded");
+      // Hide all sections when panel closed
+      localSection.classList.add("hidden");
+      downloadableSection.classList.add("hidden");
+      divider.classList.add("hidden");
+    }
+  }
+
+  function hasLocalBuilds() {
+    const builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    return builds.some(b => b && !b.startsWith("/builds/") && b.trim() !== "");
+  }
+
+  function hasDownloadableBuilds() {
+    return currentDownloadableBuilds.length > 0;
+  }
+
+  function cleanVersionName(rawName) {
+    if (!rawName) return "";
+    let name = rawName;
+
+    if (name.startsWith("/builds/")) {
+      name = name.slice(8);
+    }
+    if (name === "/builds/" || name === "builds/" || name === "/builds") {
+      return "";
+    }
+    name = name.replace(/\.html?$/i, "");
+    try {
+      name = decodeURIComponent(name);
+    } catch {}
+    return name.trim();
+  }
+
+  function saveBuildToStorage(rawVersionName, htmlContent) {
+    if (!rawVersionName || !htmlContent) return;
+
+    const version = cleanVersionName(rawVersionName);
+    if (!version) return;
+
+    let builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    if (!builds.includes(version)) {
+      builds.push(version);
+      localStorage.setItem("pakedBuilds", JSON.stringify(builds));
+    }
+    localStorage.setItem(version, htmlContent);
+  }
+
+  function loadLocalBuilds() {
+    const builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    const localBuildsDiv = document.getElementById("localBuilds");
+    localBuildsDiv.innerHTML = "";
+
+    const filteredBuilds = builds.filter(b => b && !b.startsWith("/builds/") && b.trim() !== "");
+    if (filteredBuilds.length === 0) {
+      localBuildsDiv.innerHTML = "<div style='padding:10px; color:#888;'>No downloaded builds yet.</div>";
+      // Hide local builds section if panel is closed or empty
+      if(sidePanelExpanded) document.getElementById("localBuildsSection").classList.add("hidden");
+      checkDividerVisibility();
+      return;
+    }
+
+    filteredBuilds.forEach(version => {
+      const item = document.createElement("div");
+      item.className = "build-item local";
+      item.textContent = version;
+
+      const actions = document.createElement("div");
+      actions.className = "build-actions";
+
+      const playBtn = document.createElement("button");
+      playBtn.textContent = "Play";
+      playBtn.onclick = () => playLocalBuild(version);
+      actions.appendChild(playBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "Delete";
+      delBtn.onclick = () => {
+        if (confirm(`Delete build "${version}"?`)) {
+          deleteLocalBuild(version);
+        }
+      };
+      actions.appendChild(delBtn);
+
+      item.appendChild(actions);
+      localBuildsDiv.appendChild(item);
+    });
+
+    if(sidePanelExpanded) document.getElementById("localBuildsSection").classList.remove("hidden");
+    checkDividerVisibility();
+  }
+
+  function deleteLocalBuild(version) {
+    let builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    builds = builds.filter(b => b !== version);
+    localStorage.setItem("pakedBuilds", JSON.stringify(builds));
+    localStorage.removeItem(version);
+    loadLocalBuilds();
+    fetchAvailableBuilds();
+  }
+
+  function playLocalBuild(version) {
+    const html = localStorage.getItem(version);
+    if (!html) {
+      alert("Build not found locally.");
+      return;
+    }
+    showIframeWithContent(html);
+  }
+
+  function isLocalBuild(version) {
+    const builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    return builds.includes(version);
+  }
+
+  async function fetchAvailableBuilds() {
+    const downloadableBuildsDiv = document.getElementById("downloadableBuilds");
+    try {
+      const response = await fetch("https://paked-server.onrender.com/builds/");
+      if (!response.ok) throw new Error("Failed to fetch builds");
+      const htmlText = await response.text();
+
+      // Extract .html filenames with regex (href attribute)
+      const hrefMatches = [...htmlText.matchAll(/href="([^"]+\.html?)"/gi)];
+      const filenames = hrefMatches.map(m => cleanVersionName(m[1])).filter(name => name && name !== "");
+
+      // Remove duplicates
+      const uniqueFilenames = Array.from(new Set(filenames));
+
+      currentDownloadableBuilds = uniqueFilenames;
+
+      downloadableBuildsDiv.innerHTML = "";
+
+      if (uniqueFilenames.length === 0) {
+        downloadableBuildsDiv.innerHTML = "<div style='padding:10px; color:#888;'>No downloadable builds found.</div>";
+        if(sidePanelExpanded) document.getElementById("downloadableBuildsSection").classList.remove("hidden");
+        checkDividerVisibility();
+        return;
+      }
+
+      uniqueFilenames.forEach(version => {
+        const item = document.createElement("div");
+        if (isLocalBuild(version)) {
+          item.className = "build-item downloadable downloaded";
+          item.textContent = `${version} (Downloaded)`;
+        } else {
+          item.className = "build-item downloadable";
+          item.title = "Click to download";
+          item.innerHTML = `<span><span class="download-icon">⬇</span>${version}</span>`;
+          item.onclick = () => downloadBuild(version);
+        }
+        downloadableBuildsDiv.appendChild(item);
+      });
+
+      if(sidePanelExpanded) document.getElementById("downloadableBuildsSection").classList.remove("hidden");
+      checkDividerVisibility();
+
+    } catch (error) {
+      downloadableBuildsDiv.innerHTML = `<div style='padding:10px; color:#888;'>Failed to load builds.</div>`;
+      if(sidePanelExpanded) document.getElementById("downloadableBuildsSection").classList.remove("hidden");
+      checkDividerVisibility();
+      console.error(error);
+    }
+  }
+
+  async function downloadBuild(version) {
+    if (!version) return;
+    if (isLocalBuild(version)) {
+      alert("Build already downloaded.");
+      return;
+    }
+
+    try {
+      // Use exact URL format with encoded spaces as %20
+      const encodedVersion = encodeURIComponent(version);
+      const url = `https://paked-server.onrender.com/builds/${encodedVersion}.html`;
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Download failed");
+
+      const htmlContent = await response.text();
+      saveBuildToStorage(version, htmlContent);
+      alert(`Build "${version}" downloaded successfully.`);
+      loadLocalBuilds();
+      fetchAvailableBuilds();
+    } catch (error) {
+      alert("Failed to download build.");
+      console.error(error);
+    }
+  }
+
+  function playLatestBuild() {
+    const builds = JSON.parse(localStorage.getItem("pakedBuilds")) || [];
+    if (builds.length === 0) {
+      alert("No local builds to play.");
+      return;
+    }
+    // Play last build (latest)
+    playLocalBuild(builds[builds.length - 1]);
+  }
+
+  function showIframeWithContent(html) {
+    const iframeContainer = document.getElementById("iframeContainer");
+    const iframe = document.getElementById("gameIframe");
+
+    iframe.srcdoc = html;
+
+    iframeContainer.classList.add("visible");
+  }
+
+  function closeIframe() {
+    const iframeContainer = document.getElementById("iframeContainer");
+    const iframe = document.getElementById("gameIframe");
+
+    iframe.srcdoc = "";
+    iframeContainer.classList.remove("visible");
+  }
+
+  document.getElementById("iframeContainer").addEventListener("click", e => {
+    if (e.target.id === "iframeContainer") {
+      closeIframe();
+    }
+  });
+
+  function checkDividerVisibility() {
+    const divider = document.getElementById("divider");
+    const localVisible = !document.getElementById("localBuildsSection").classList.contains("hidden");
+    const downloadVisible = !document.getElementById("downloadableBuildsSection").classList.contains("hidden");
+
+    if (localVisible && downloadVisible) {
+      divider.classList.remove("hidden");
+    } else {
+      divider.classList.add("hidden");
+    }
+  }
+
+  // Initial load
+  window.onload = () => {
+    loadLocalBuilds();
+    fetchAvailableBuilds();
+  };
+</script>
+</body>
+</html>
