@@ -194,20 +194,41 @@ async function fetchAvailableBuilds(){
       } else {
         item.className="build-item downloadable";
         item.innerHTML = `<span><span class="download-icon">⬇</span>${displayName}</span>`;
-        item.onclick = () => downloadBuild(v);
+        item.onclick = () => downloadBuild(v, item);
       }
       div.appendChild(item);
     });
   } catch(err){ div.innerHTML="<div style='padding:10px;color:#888;'>Failed to load builds.</div>"; console.error(err); }
 }
 
-// --- Download and play ---
-async function downloadBuild(version){
+// --- Download with progress ---
+async function downloadBuild(version, itemElement){
+  const progressBar = document.getElementById("progressBar");
+  const progressFill = document.getElementById("progressFill");
+  progressBar.style.display = "block";
+  progressFill.style.width = "0%";
+
   try{
     const fileName = version.endsWith(".html") ? version : version + ".html";
     const res = await fetch(`${WORKER_URL}${encodeURIComponent(fileName)}`);
     if(!res.ok) throw new Error("Download failed");
-    const html = await res.text();
+
+    const reader = res.body.getReader();
+    const contentLength = +res.headers.get('Content-Length');
+    let receivedLength = 0;
+    let chunks = [];
+
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      chunks.push(value);
+      receivedLength += value.length;
+      if(contentLength) progressFill.style.width = `${Math.floor(receivedLength / contentLength * 100)}%`;
+    }
+
+    const blob = new Blob(chunks, {type: "text/html"});
+    const html = await blob.text();
+
     await saveBuild(version, html);
     let buildList = getBuildList();
     if(!buildList.includes(version)) buildList.push(version);
@@ -215,8 +236,10 @@ async function downloadBuild(version){
     loadLocalBuilds();
     fetchAvailableBuilds();
   } catch(err){ alert("Failed to download build."); console.error(err); }
+  progressBar.style.display = "none";
 }
 
+// --- Play ---
 async function playLocalBuild(version){
   const html = await getBuild(version);
   if(!html){ alert("Build not found locally."); return; }
