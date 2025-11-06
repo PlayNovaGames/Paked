@@ -36,8 +36,9 @@
 </head>
 <body>
 <div class="top-bar">
-  <h1>Paked Launcher V2.0</h1>
+  <h1>Paked Launcher</h1>
 </div>
+
 <div id="sidePanel" class="side-panel">
   <button class="toggle-btn" onclick="toggleSidePanel()">☰</button>
   <div id="localBuildsSection" class="panel-section hidden">
@@ -65,9 +66,9 @@
 </div>
 
 <script>
+const WORKER_URL = "https://paked.proliverplays.workers.dev/";
 let sidePanelExpanded = false;
 let currentDownloadableBuilds = [];
-const WORKER_URL = "https://paked.proliverplays.workers.dev/"; // your Cloudflare Worker
 
 function toggleSidePanel() {
   sidePanelExpanded = !sidePanelExpanded;
@@ -76,7 +77,7 @@ function toggleSidePanel() {
   const downloadableSection = document.getElementById("downloadableBuildsSection");
   const divider = document.getElementById("divider");
 
-  if(sidePanelExpanded){
+  if (sidePanelExpanded) {
     panel.classList.add("expanded");
     localSection.classList.toggle("hidden", !hasLocalBuilds());
     downloadableSection.classList.toggle("hidden", !hasDownloadableBuilds());
@@ -92,13 +93,11 @@ function toggleSidePanel() {
 function hasLocalBuilds(){ return (JSON.parse(localStorage.getItem("pakedBuilds"))||[]).length>0; }
 function hasDownloadableBuilds(){ return currentDownloadableBuilds.length>0; }
 
-function cleanVersionName(name){ return decodeURIComponent(name.replace(/\.html$/i,"").trim()); }
-function saveBuildToStorage(version, html){ 
-  if(!version || !html) return; 
-  let builds = JSON.parse(localStorage.getItem("pakedBuilds"))||[]; 
-  if(!builds.includes(version)) builds.push(version); 
-  localStorage.setItem("pakedBuilds", JSON.stringify(builds)); 
-  localStorage.setItem(version, html); 
+function saveBuild(version, html){ 
+  let builds = JSON.parse(localStorage.getItem("pakedBuilds"))||[];
+  if(!builds.includes(version)) builds.push(version);
+  localStorage.setItem("pakedBuilds", JSON.stringify(builds));
+  localStorage.setItem(version, html);
 }
 
 function loadLocalBuilds(){
@@ -124,17 +123,20 @@ function deleteLocalBuild(version){
 
 function playLocalBuild(version){
   const html = localStorage.getItem(version); if(!html){ alert("Build not found locally."); return; }
-  showIframeWithContent(html);
+  showIframe(html);
 }
 
-function showIframeWithContent(html){
-  const iframeContainer=document.getElementById("iframeContainer"); const iframe=document.getElementById("gameIframe");
-  iframe.srcdoc=html; iframeContainer.classList.add("visible");
+function showIframe(html){
+  const container=document.getElementById("iframeContainer"); 
+  const iframe=document.getElementById("gameIframe");
+  iframe.srcdoc=html;
+  container.classList.add("visible");
 }
 
 function closeIframe(){
-  const iframeContainer=document.getElementById("iframeContainer"); const iframe=document.getElementById("gameIframe");
-  iframe.srcdoc=""; iframeContainer.classList.remove("visible");
+  const container=document.getElementById("iframeContainer");
+  container.querySelector("iframe").srcdoc="";
+  container.classList.remove("visible");
 }
 
 document.getElementById("iframeContainer").addEventListener("click", e=>{ if(e.target.id==="iframeContainer") closeIframe(); });
@@ -146,20 +148,18 @@ function checkDividerVisibility(){
   divider.classList.toggle("hidden", !(localVisible && downloadVisible));
 }
 
+// ---- Fetch builds from Worker ----
 async function fetchAvailableBuilds(){
-  const div=document.getElementById("downloadableBuilds"); div.innerHTML="";
+  const div = document.getElementById("downloadableBuilds");
+  div.innerHTML="";
   try{
-    const res=await fetch(WORKER_URL);
+    const res = await fetch(WORKER_URL+"list");
     if(!res.ok) throw new Error("Failed to fetch builds");
-    const htmlText=await res.text();
-    const files=[...htmlText.matchAll(/href="([^"]+\.html?)"/gi)].map(m=>cleanVersionName(m[1]));
-    const uniqueFiles=Array.from(new Set(files));
-    currentDownloadableBuilds=uniqueFiles.sort((a,b)=>{ // auto sort by version number descending
-      const va=a.match(/\d+(\.\d+)*/g)?.[0]||"0"; const vb=b.match(/\d+(\.\d+)*/g)?.[0]||"0";
-      return compareVersions(vb,va);
-    });
-    if(uniqueFiles.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>"; return; }
-    uniqueFiles.forEach(v=>{
+    const builds = await res.json();
+    currentDownloadableBuilds = builds.sort((a,b)=>compareVersions(b,a));
+    if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>"; return; }
+
+    currentDownloadableBuilds.forEach(v=>{
       const item=document.createElement("div");
       if(localStorage.getItem(v)){ item.className="build-item downloadable downloaded"; item.textContent=`${v} (Downloaded)`; }
       else{ item.className="build-item downloadable"; item.innerHTML=`<span><span class="download-icon">⬇</span>${v}</span>`; item.onclick=()=>downloadBuild(v); }
@@ -169,14 +169,13 @@ async function fetchAvailableBuilds(){
 }
 
 async function downloadBuild(version){
-  if(!version || localStorage.getItem(version)) return;
   try{
-    const res=await fetch(`${WORKER_URL}${encodeURIComponent(version)}.html`);
+    const res = await fetch(`${WORKER_URL}${encodeURIComponent(version)}.html`);
     if(!res.ok) throw new Error("Download failed");
-    const html=await res.text();
-    saveBuildToStorage(version,html);
-    alert(`Build "${version}" downloaded successfully.`);
-    loadLocalBuilds(); fetchAvailableBuilds();
+    const html = await res.text();
+    saveBuild(version, html);
+    loadLocalBuilds();
+    fetchAvailableBuilds();
   } catch(err){ alert("Failed to download build."); console.error(err); }
 }
 
@@ -186,17 +185,21 @@ function compareVersions(a,b){
 }
 
 function playLatestBuild(){
-  if(currentDownloadableBuilds.length>0) playBuild(currentDownloadableBuilds[0]); // auto-play latest version
-  else{ const builds=JSON.parse(localStorage.getItem("pakedBuilds"))||[]; if(builds.length>0) playLocalBuild(builds[builds.length-1]); else alert("No builds available."); }
+  if(currentDownloadableBuilds.length>0) playBuild(currentDownloadableBuilds[0]);
+  else{
+    const builds = JSON.parse(localStorage.getItem("pakedBuilds"))||[];
+    if(builds.length>0) playLocalBuild(builds[builds.length-1]);
+    else alert("No builds available.");
+  }
 }
 
-function playBuild(version){ // downloads if not local
+function playBuild(version){
   if(localStorage.getItem(version)) playLocalBuild(version);
   else downloadBuild(version).then(()=>playLocalBuild(version));
 }
 
-// Initial load
-window.onload=()=>{
+// --- Init ---
+window.onload = ()=>{
   loadLocalBuilds();
   fetchAvailableBuilds();
 };
