@@ -123,13 +123,16 @@ function cleanVersionName(name){ return name.replace(/\.html$/i,"").trim(); }
 function hasLocalBuilds(){ return getBuildList().length>0; }
 function hasDownloadableBuilds(){ return currentDownloadableBuilds.length>0; }
 
-// --- Compare versions (newest first) ---
+// --- Correct compareVersions (newest first) ---
 function compareVersions(a, b) {
-  const pa = a.replace(/^V/i,'').split('.').map(n=>parseInt(n,10));
-  const pb = b.replace(/^V/i,'').split('.').map(n=>parseInt(n,10));
-  for(let i=0; i<Math.max(pa.length,pb.length); i++) {
-    const na=pa[i]||0, nb=pb[i]||0;
-    if(na!==nb) return nb-na;
+  const pa = a.replace(/^v/i,'').split('.').map(n=>parseInt(n,10));
+  const pb = b.replace(/^v/i,'').split('.').map(n=>parseInt(n,10));
+  const len = Math.max(pa.length, pb.length);
+  for(let i=0;i<len;i++){
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if(na > nb) return -1; // a newer → first
+    if(na < nb) return 1;  // b newer → first
   }
   return 0;
 }
@@ -137,7 +140,7 @@ function compareVersions(a, b) {
 // --- Load local builds ---
 function loadLocalBuilds(){
   let builds = getBuildList();
-  builds.sort(compareVersions); // newest first
+  builds.sort(compareVersions);
   const div = document.getElementById("localBuilds"); div.innerHTML="";
   if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return; }
   builds.forEach(v=>{
@@ -276,12 +279,13 @@ function closeIframe(){
 
 document.getElementById("iframeContainer").addEventListener("click", e=>{ if(e.target.id==="iframeContainer") closeIframe(); });
 
-// --- Play latest build ---
+// --- Play latest build (fixed) ---
 function playLatestBuild(){
+  // Merge local and downloadable builds, then sort
   const allBuilds = [...getBuildList(), ...currentDownloadableBuilds.filter(v=>!getBuildList().includes(v))];
-  if(allBuilds.length===0) { alert("No builds available."); return; }
-  allBuilds.sort(compareVersions);
-  playBuild(allBuilds[0]);
+  if(allBuilds.length === 0) { alert("No builds available."); return; }
+  allBuilds.sort(compareVersions); // newest first
+  playBuild(allBuilds[0]); // pick the first → newest
 }
 
 function playBuild(version){
