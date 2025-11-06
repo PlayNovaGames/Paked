@@ -71,7 +71,7 @@ let sidePanelExpanded = false;
 let currentDownloadableBuilds = [];
 let db;
 
-// --- IndexedDB Setup ---
+// --- IndexedDB ---
 function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("PakedLauncher", 1);
@@ -117,35 +117,37 @@ function deleteBuild(version) {
 // --- Local build tracking ---
 function saveBuildList(builds) { localStorage.setItem("pakedBuilds", JSON.stringify(builds)); }
 function getBuildList() { return JSON.parse(localStorage.getItem("pakedBuilds"))||[]; }
-
 function cleanVersionName(name){ return name.replace(/\.html$/i,"").trim(); }
-
 function hasLocalBuilds(){ return getBuildList().length>0; }
 function hasDownloadableBuilds(){ return currentDownloadableBuilds.length>0; }
 
-// --- Correct compareVersions (newest first) ---
+// --- Compare versions (newest first) ---
 function compareVersions(a, b) {
-  const pa = a.replace(/^v/i,'').split('.').map(n=>parseInt(n,10));
-  const pb = b.replace(/^v/i,'').split('.').map(n=>parseInt(n,10));
-  const len = Math.max(pa.length, pb.length);
-  for(let i=0;i<len;i++){
+  const pa = a.trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10));
+  const pb = b.trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10));
+  const maxLen = Math.max(pa.length, pb.length);
+  for (let i = 0; i < maxLen; i++) {
     const na = pa[i] || 0;
     const nb = pb[i] || 0;
-    if(na > nb) return -1; // a newer → first
-    if(na < nb) return 1;  // b newer → first
+    if (na > nb) return -1;
+    if (na < nb) return 1;
   }
   return 0;
 }
 
+function sortBuilds(builds){ return builds.slice().sort(compareVersions); }
+
 // --- Load local builds ---
 function loadLocalBuilds(){
-  let builds = getBuildList();
-  builds.sort(compareVersions);
+  let builds = sortBuilds(getBuildList());
   const div = document.getElementById("localBuilds"); div.innerHTML="";
-  if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return; }
+  if(builds.length===0){
+    div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>";
+    checkDividerVisibility(); return;
+  }
   builds.forEach(v=>{
-    const item=document.createElement("div"); 
-    item.className="build-item local"; 
+    const item=document.createElement("div");
+    item.className="build-item local";
     item.textContent=cleanVersionName(v);
     const actions=document.createElement("div"); actions.className="build-actions";
     const playBtn=document.createElement("button"); playBtn.textContent="Play"; playBtn.onclick=()=>playLocalBuild(v);
@@ -157,8 +159,8 @@ function loadLocalBuilds(){
         loadLocalBuilds(); fetchAvailableBuilds();
       }
     };
-    actions.append(playBtn, delBtn); 
-    item.appendChild(actions); 
+    actions.append(playBtn, delBtn);
+    item.appendChild(actions);
     div.appendChild(item);
   });
 }
@@ -198,7 +200,7 @@ async function fetchAvailableBuilds(){
     const res = await fetch(WORKER_URL+"list");
     if(!res.ok) throw new Error("Failed to fetch builds");
     const builds = await res.json();
-    currentDownloadableBuilds = builds.sort(compareVersions);
+    currentDownloadableBuilds = sortBuilds(builds);
     if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>"; return; }
 
     currentDownloadableBuilds.forEach(v=>{
@@ -223,7 +225,6 @@ async function downloadBuild(version, itemElement){
   const progressFill = document.getElementById("progressFill");
   progressBar.style.display = "block";
   progressFill.style.width = "0%";
-
   try{
     const fileName = version.endsWith(".html") ? version : version + ".html";
     const res = await fetch(`${WORKER_URL}${encodeURIComponent(fileName)}`);
@@ -248,8 +249,7 @@ async function downloadBuild(version, itemElement){
     await saveBuild(version, html);
     let buildList = getBuildList();
     if(!buildList.includes(version)) buildList.push(version);
-    buildList.sort(compareVersions);
-    saveBuildList(buildList);
+    saveBuildList(sortBuilds(buildList));
 
     loadLocalBuilds();
     fetchAvailableBuilds();
@@ -277,15 +277,15 @@ function closeIframe(){
   container.classList.remove("visible");
 }
 
-document.getElementById("iframeContainer").addEventListener("click", e=>{ if(e.target.id==="iframeContainer") closeIframe(); });
+document.getElementById("iframeContainer").addEventListener("click", e=>{
+  if(e.target.id==="iframeContainer") closeIframe();
+});
 
-// --- Play latest build (fixed) ---
+// --- Play latest build ---
 function playLatestBuild(){
-  // Merge local and downloadable builds, then sort
-  const allBuilds = [...getBuildList(), ...currentDownloadableBuilds.filter(v=>!getBuildList().includes(v))];
-  if(allBuilds.length === 0) { alert("No builds available."); return; }
-  allBuilds.sort(compareVersions); // newest first
-  playBuild(allBuilds[0]); // pick the first → newest
+  const allBuilds = sortBuilds([...getBuildList(), ...currentDownloadableBuilds.filter(v=>!getBuildList().includes(v))]);
+  if(allBuilds.length===0){ alert("No builds available."); return; }
+  playBuild(allBuilds[0]);
 }
 
 function playBuild(version){
