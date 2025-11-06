@@ -108,7 +108,7 @@ function loadLocalBuilds(){
     const item=document.createElement("div"); item.className="build-item local"; item.textContent=v;
     const actions=document.createElement("div"); actions.className="build-actions";
     const playBtn=document.createElement("button"); playBtn.textContent="Play"; playBtn.onclick=()=>playLocalBuild(v);
-    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=()=>{if(confirm(`Delete build "${v}"?`)){deleteLocalBuild(v)}};
+    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=()=>{if(confirm(`Delete build "${v}"?`)){deleteLocalBuild(v)}}; 
     actions.append(playBtn, delBtn); item.appendChild(actions); div.appendChild(item);
   });
 }
@@ -199,10 +199,7 @@ function playBuild(version){
 }
 
 // --- Init ---
-window.onload = ()=>{
-  loadLocalBuilds();
-  fetchAvailableBuilds();
-};
+window.onload = ()=>{ loadLocalBuilds(); fetchAvailableBuilds(); };
 </script>
 </body>
 </html>
