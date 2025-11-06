@@ -76,7 +76,6 @@ function toggleSidePanel() {
   const localSection = document.getElementById("localBuildsSection");
   const downloadableSection = document.getElementById("downloadableBuildsSection");
   const divider = document.getElementById("divider");
-
   if (sidePanelExpanded) {
     panel.classList.add("expanded");
     localSection.classList.toggle("hidden", !hasLocalBuilds());
@@ -100,15 +99,17 @@ function saveBuild(version, html){
   localStorage.setItem(version, html);
 }
 
+function cleanVersionName(name){ return name.replace(/\.html$/i,"").trim(); }
+
 function loadLocalBuilds(){
   const builds = JSON.parse(localStorage.getItem("pakedBuilds"))||[];
   const div = document.getElementById("localBuilds"); div.innerHTML="";
   if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return; }
   builds.forEach(v=>{
-    const item=document.createElement("div"); item.className="build-item local"; item.textContent=v;
+    const item=document.createElement("div"); item.className="build-item local"; item.textContent=cleanVersionName(v);
     const actions=document.createElement("div"); actions.className="build-actions";
     const playBtn=document.createElement("button"); playBtn.textContent="Play"; playBtn.onclick=()=>playLocalBuild(v);
-    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=()=>{if(confirm(`Delete build "${v}"?`)){deleteLocalBuild(v)}}; 
+    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=()=>{if(confirm(`Delete build "${cleanVersionName(v)}"?`)){deleteLocalBuild(v)}}; 
     actions.append(playBtn, delBtn); item.appendChild(actions); div.appendChild(item);
   });
 }
@@ -161,8 +162,15 @@ async function fetchAvailableBuilds(){
 
     currentDownloadableBuilds.forEach(v=>{
       const item=document.createElement("div");
-      if(localStorage.getItem(v)){ item.className="build-item downloadable downloaded"; item.textContent=`${v} (Downloaded)`; }
-      else{ item.className="build-item downloadable"; item.innerHTML=`<span><span class="download-icon">⬇</span>${v}</span>`; item.onclick=()=>downloadBuild(v); }
+      const displayName = cleanVersionName(v);
+      if(localStorage.getItem(v)){ 
+        item.className="build-item downloadable downloaded"; 
+        item.textContent=`${displayName} (Downloaded)`; 
+      } else { 
+        item.className="build-item downloadable"; 
+        item.innerHTML = `<span><span class="download-icon">⬇</span>${displayName}</span>`; 
+        item.onclick = () => downloadBuild(v); 
+      }
       div.appendChild(item);
     });
   } catch(err){ div.innerHTML="<div style='padding:10px;color:#888;'>Failed to load builds.</div>"; console.error(err); }
@@ -170,7 +178,9 @@ async function fetchAvailableBuilds(){
 
 async function downloadBuild(version){
   try{
-    const res = await fetch(`${WORKER_URL}${encodeURIComponent(version)}.html`);
+    // Prevent double .html
+    const fileName = version.endsWith(".html") ? version : version + ".html";
+    const res = await fetch(`${WORKER_URL}${encodeURIComponent(fileName)}`);
     if(!res.ok) throw new Error("Download failed");
     const html = await res.text();
     saveBuild(version, html);
