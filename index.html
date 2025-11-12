@@ -32,6 +32,28 @@
   .iframe-overlay {position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 9999; opacity: 0; transition: opacity 0.5s ease; pointer-events: none;}
   .iframe-overlay.visible {opacity: 1; pointer-events: all;}
   .iframe-overlay iframe {width: 100%; height: 100%; border: none;}
+
+  /* Message Box Styling */
+  .message-box-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center;
+    z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+  }
+  .message-box-overlay.visible {opacity: 1; pointer-events: all;}
+  .message-box {
+    background: #2c2c3c; border-radius: 10px; padding: 20px; width: 400px; max-width: 90%;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5); text-align: center;
+  }
+  .message-box h3 {margin-top: 0; font-size: 18px; color: #ff7676;}
+  .message-box p {color: #ccc; font-size: 15px;}
+  .message-box-buttons {margin-top: 20px; display: flex; justify-content: space-around;}
+  .message-box-buttons button {
+    background: #555; color: white; border: none; padding: 10px 15px;
+    border-radius: 5px; cursor: pointer; font-size: 14px;
+  }
+  .message-box-buttons button:hover {background: #666;}
+  .message-box-buttons button.primary {background: #28a745;}
+  .message-box-buttons button.danger {background: #c0392b;}
 </style>
 </head>
 <body>
@@ -65,22 +87,36 @@
   <iframe id="gameIframe"></iframe>
 </div>
 
+<!-- Message box for failed downloads -->
+<div id="messageBoxOverlay" class="message-box-overlay">
+  <div class="message-box">
+    <h3 id="messageTitle"></h3>
+    <p id="messageText"></p>
+    <div class="message-box-buttons">
+      <button class="primary" id="retryButton">Try Again</button>
+      <button id="runOnlineButton">Run Online Version</button>
+      <button class="danger" id="cancelButton">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const WORKER_URL = "https://paked.proliverplays.workers.dev/";
 let sidePanelExpanded = false;
 let currentDownloadableBuilds = [];
 let db;
+let retryInfo = null; // for retry data
 
-// --- IndexedDB Setup ---
+// IndexedDB setup
 function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("PakedLauncher", 1);
-    request.onupgradeneeded = (e) => {
+    request.onupgradeneeded = e => {
       db = e.target.result;
-      if(!db.objectStoreNames.contains("builds")) db.createObjectStore("builds");
+      if (!db.objectStoreNames.contains("builds")) db.createObjectStore("builds");
     };
-    request.onsuccess = (e) => { db = e.target.result; resolve(); };
-    request.onerror = (e) => reject(e);
+    request.onsuccess = e => { db = e.target.result; resolve(); };
+    request.onerror = e => reject(e);
   });
 }
 
@@ -90,7 +126,7 @@ function saveBuild(version, html) {
     const store = tx.objectStore("builds");
     store.put(html, version);
     tx.oncomplete = () => resolve();
-    tx.onerror = (e) => reject(e);
+    tx.onerror = e => reject(e);
   });
 }
 
@@ -98,9 +134,9 @@ function getBuild(version) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("builds", "readonly");
     const store = tx.objectStore("builds");
-    const request = store.get(version);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    const req = store.get(version);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -110,13 +146,12 @@ function deleteBuild(version) {
     const store = tx.objectStore("builds");
     store.delete(version);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = e => reject(tx.error);
   });
 }
 
-// --- Local build tracking ---
-function saveBuildList(builds) { localStorage.setItem("pakedBuilds", JSON.stringify(builds)); }
-function getBuildList() { return JSON.parse(localStorage.getItem("pakedBuilds"))||[]; }
+function saveBuildList(b) { localStorage.setItem("pakedBuilds", JSON.stringify(b)); }
+function getBuildList() { return JSON.parse(localStorage.getItem("pakedBuilds")) || []; }
 
 function cleanVersionName(name){ return name.replace(/\.html$/i,"").trim(); }
 
@@ -124,176 +159,117 @@ function hasLocalBuilds(){ return getBuildList().length>0; }
 function hasDownloadableBuilds(){ return currentDownloadableBuilds.length>0; }
 
 function loadLocalBuilds(){
-  const builds = getBuildList().sort(compareVersionsDesc); // ✅ sort newest first
-  const div = document.getElementById("localBuilds"); div.innerHTML="";
-  if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return; }
+  const builds = getBuildList().sort(compareVersionsDesc);
+  const div=document.getElementById("localBuilds"); div.innerHTML="";
+  if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return;}
   builds.forEach(v=>{
-    const item=document.createElement("div"); 
-    item.className="build-item local"; 
+    const item=document.createElement("div");
+    item.className="build-item local";
     item.textContent=cleanVersionName(v);
     const actions=document.createElement("div"); actions.className="build-actions";
     const playBtn=document.createElement("button"); playBtn.textContent="Play"; playBtn.onclick=()=>playLocalBuild(v);
-    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=async ()=>{
-      if(confirm(`Delete build "${cleanVersionName(v)}"?`)){
-        let buildList = getBuildList().filter(b=>b!==v);
-        saveBuildList(buildList);
-        await deleteBuild(v);
-        loadLocalBuilds(); fetchAvailableBuilds();
-      }
-    };
-    actions.append(playBtn, delBtn); 
-    item.appendChild(actions); 
-    div.appendChild(item);
+    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=async()=>{if(confirm(`Delete build "${cleanVersionName(v)}"?`)){let l=getBuildList().filter(b=>b!==v);saveBuildList(l);await deleteBuild(v);loadLocalBuilds();fetchAvailableBuilds();}};
+    actions.append(playBtn,delBtn); item.append(actions); div.append(item);
   });
 }
 
-// --- Sorting functions ---
-function parseVersion(str) {
-  const match = str.match(/v?(\d+(?:\.\d+)?)/i);
-  return match ? parseFloat(match[1]) : 0;
-}
-function compareVersionsDesc(a, b) {
-  return parseVersion(b) - parseVersion(a); // ✅ newest (largest) first
-}
+function parseVersion(str){const m=str.match(/v?(\d+(?:\.\d+)?)/i);return m?parseFloat(m[1]):0;}
+function compareVersionsDesc(a,b){return parseVersion(b)-parseVersion(a);}
 
-// --- Side panel ---
-function toggleSidePanel() {
-  sidePanelExpanded = !sidePanelExpanded;
-  const panel = document.getElementById("sidePanel");
-  const localSection = document.getElementById("localBuildsSection");
-  const downloadableSection = document.getElementById("downloadableBuildsSection");
-  const divider = document.getElementById("divider");
+function toggleSidePanel(){
+  sidePanelExpanded=!sidePanelExpanded;
+  const p=document.getElementById("sidePanel");
+  const l=document.getElementById("localBuildsSection");
+  const d=document.getElementById("downloadableBuildsSection");
+  const div=document.getElementById("divider");
   if(sidePanelExpanded){
-    panel.classList.add("expanded");
-    localSection.classList.toggle("hidden", !hasLocalBuilds());
-    downloadableSection.classList.toggle("hidden", !hasDownloadableBuilds());
-    divider.classList.toggle("hidden", !(hasLocalBuilds() && hasDownloadableBuilds()));
+    p.classList.add("expanded");
+    l.classList.toggle("hidden",!hasLocalBuilds());
+    d.classList.toggle("hidden",!hasDownloadableBuilds());
+    div.classList.toggle("hidden",!(hasLocalBuilds()&&hasDownloadableBuilds()));
   } else {
-    panel.classList.remove("expanded");
-    localSection.classList.add("hidden");
-    downloadableSection.classList.add("hidden");
-    divider.classList.add("hidden");
+    p.classList.remove("expanded");
+    l.classList.add("hidden"); d.classList.add("hidden"); div.classList.add("hidden");
   }
 }
 
 function checkDividerVisibility(){
-  const divider=document.getElementById("divider");
-  const localVisible=!document.getElementById("localBuildsSection").classList.contains("hidden");
-  const downloadVisible=!document.getElementById("downloadableBuildsSection").classList.contains("hidden");
-  divider.classList.toggle("hidden", !(localVisible && downloadVisible));
+  const div=document.getElementById("divider");
+  const l=!document.getElementById("localBuildsSection").classList.contains("hidden");
+  const d=!document.getElementById("downloadableBuildsSection").classList.contains("hidden");
+  div.classList.toggle("hidden",!(l&&d));
 }
 
-// --- Fetch and display builds ---
+// Message box
+function showMessageBox(version, onRetry, onRunOnline){
+  const overlay=document.getElementById("messageBoxOverlay");
+  const title=document.getElementById("messageTitle");
+  const text=document.getElementById("messageText");
+  title.textContent=`${cleanVersionName(version)} failed to launch!`;
+  text.textContent=`The process of downloading the version to the launcher failed. Possible reasons include poor internet, unsupported device storage, or other issues. You can optionally run the online version which will not save it for offline use.`;
+  overlay.classList.add("visible");
+  document.getElementById("retryButton").onclick=()=>{overlay.classList.remove("visible");onRetry();};
+  document.getElementById("runOnlineButton").onclick=()=>{overlay.classList.remove("visible");onRunOnline();};
+  document.getElementById("cancelButton").onclick=()=>{overlay.classList.remove("visible");};
+}
+
+// Fetch builds
 async function fetchAvailableBuilds(){
-  const div = document.getElementById("downloadableBuilds");
-  div.innerHTML="";
+  const div=document.getElementById("downloadableBuilds");div.innerHTML="";
   try{
-    const res = await fetch(WORKER_URL+"list");
+    const res=await fetch(WORKER_URL+"list");
     if(!res.ok) throw new Error("Failed to fetch builds");
-    const builds = await res.json();
-
-    // ✅ sort newest (highest version) first
-    currentDownloadableBuilds = builds.sort(compareVersionsDesc);
-
-    if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>"; return; }
-
+    const builds=await res.json();
+    currentDownloadableBuilds=builds.sort(compareVersionsDesc);
+    if(builds.length===0){div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>";return;}
     currentDownloadableBuilds.forEach(v=>{
-      const item=document.createElement("div");
-      const displayName = cleanVersionName(v);
-      if(getBuildList().includes(v)){
-        item.className="build-item downloadable downloaded";
-        item.textContent=`${displayName} (Downloaded)`;
-      } else {
-        item.className="build-item downloadable";
-        item.innerHTML = `<span><span class="download-icon">⬇</span>${displayName}</span>`;
-        item.onclick = () => downloadBuild(v, item);
-      }
-      div.appendChild(item);
+      const item=document.createElement("div");const displayName=cleanVersionName(v);
+      if(getBuildList().includes(v)){item.className="build-item downloadable downloaded";item.textContent=`${displayName} (Downloaded)`;}
+      else {item.className="build-item downloadable";item.innerHTML=`<span><span class="download-icon">⬇</span>${displayName}</span>`;item.onclick=()=>downloadBuild(v,item);}
+      div.append(item);
     });
-  } catch(err){ div.innerHTML="<div style='padding:10px;color:#888;'>Failed to load builds.</div>"; console.error(err); }
+  }catch(e){div.innerHTML="<div style='padding:10px;color:#888;'>Failed to load builds.</div>";console.error(e);}
 }
 
-// --- Download with progress ---
-async function downloadBuild(version, itemElement){
-  const progressBar = document.getElementById("progressBar");
-  const progressFill = document.getElementById("progressFill");
-  progressBar.style.display = "block";
-  progressFill.style.width = "0%";
-
+// Download
+async function downloadBuild(version,itemElement){
+  const progressBar=document.getElementById("progressBar");
+  const progressFill=document.getElementById("progressFill");
+  progressBar.style.display="block";progressFill.style.width="0%";
   try{
-    const fileName = version.endsWith(".html") ? version : version + ".html";
-    const res = await fetch(`${WORKER_URL}${encodeURIComponent(fileName)}`);
+    const fileName=version.endsWith(".html")?version:version+".html";
+    const res=await fetch(`${WORKER_URL}${encodeURIComponent(fileName)}`);
     if(!res.ok) throw new Error("Download failed");
-
-    const reader = res.body.getReader();
-    const contentLength = +res.headers.get('Content-Length');
-    let receivedLength = 0;
-    let chunks = [];
-
-    while(true){
-      const {done, value} = await reader.read();
-      if(done) break;
-      chunks.push(value);
-      receivedLength += value.length;
-      if(contentLength) progressFill.style.width = `${Math.floor(receivedLength / contentLength * 100)}%`;
-    }
-
-    const blob = new Blob(chunks, {type: "text/html"});
-    const html = await blob.text();
-
-    await saveBuild(version, html);
-    let buildList = getBuildList();
-    if(!buildList.includes(version)) buildList.push(version);
-    saveBuildList(buildList);
-    loadLocalBuilds();
-    fetchAvailableBuilds();
-  } catch(err){ alert("Failed to download build."); console.error(err); }
-  progressBar.style.display = "none";
-}
-
-// --- Play ---
-async function playLocalBuild(version){
-  const html = await getBuild(version);
-  if(!html){ alert("Build not found locally."); return; }
-  showIframe(html);
-}
-
-function showIframe(html){
-  const container=document.getElementById("iframeContainer"); 
-  const iframe=document.getElementById("gameIframe");
-  iframe.srcdoc=html;
-  container.classList.add("visible");
-}
-
-function closeIframe(){
-  const container=document.getElementById("iframeContainer");
-  container.querySelector("iframe").srcdoc="";
-  container.classList.remove("visible");
-}
-
-document.getElementById("iframeContainer").addEventListener("click", e=>{ if(e.target.id==="iframeContainer") closeIframe(); });
-
-// ✅ Fixed playLatestBuild to use sorted order
-function playLatestBuild(){
-  if(currentDownloadableBuilds.length>0) playBuild(currentDownloadableBuilds[0]);
-  else {
-    const builds = getBuildList().sort(compareVersionsDesc);
-    if(builds.length>0) playLocalBuild(builds[0]);
-    else alert("No builds available.");
+    const reader=res.body.getReader();
+    const len=+res.headers.get('Content-Length');let rec=0;let chunks=[];
+    while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);rec+=value.length;if(len)progressFill.style.width=`${Math.floor(rec/len*100)}%`;}
+    const blob=new Blob(chunks,{type:"text/html"});const html=await blob.text();
+    await saveBuild(version,html);
+    let list=getBuildList();if(!list.includes(version))list.push(version);saveBuildList(list);
+    loadLocalBuilds();fetchAvailableBuilds();
+  }catch(err){
+    console.error(err);
+    showMessageBox(version,()=>downloadBuild(version,itemElement),()=>runOnlineVersion(version));
   }
+  progressBar.style.display="none";
 }
 
-function playBuild(version){
-  if(getBuildList().includes(version)) playLocalBuild(version);
-  else downloadBuild(version).then(()=>playLocalBuild(version));
+// Run online version fallback
+function runOnlineVersion(version){
+  const fileName=version.endsWith(".html")?version:version+".html";
+  const url=`${WORKER_URL}${encodeURIComponent(fileName)}`;
+  showIframe(`<iframe src="${url}" style="width:100%;height:100%;border:none;"></iframe>`);
 }
 
-// --- Init ---
-window.onload = async ()=>{
-  await openDB();
-  loadLocalBuilds(); 
-  fetchAvailableBuilds();
-};
+// Play
+async function playLocalBuild(version){const html=await getBuild(version);if(!html){alert("Build not found locally.");return;}showIframe(html);}
+function showIframe(html){const c=document.getElementById("iframeContainer");const i=document.getElementById("gameIframe");i.srcdoc=html;c.classList.add("visible");}
+function closeIframe(){const c=document.getElementById("iframeContainer");c.querySelector("iframe").srcdoc="";c.classList.remove("visible");}
+document.getElementById("iframeContainer").addEventListener("click",e=>{if(e.target.id==="iframeContainer")closeIframe();});
+function playLatestBuild(){if(currentDownloadableBuilds.length>0)playBuild(currentDownloadableBuilds[0]);else{const b=getBuildList().sort(compareVersionsDesc);if(b.length>0)playLocalBuild(b[0]);else alert("No builds available.");}}
+function playBuild(v){if(getBuildList().includes(v))playLocalBuild(v);else downloadBuild(v).then(()=>playLocalBuild(v));}
+
+window.onload=async()=>{await openDB();loadLocalBuilds();fetchAvailableBuilds();};
 </script>
 </body>
 </html>
