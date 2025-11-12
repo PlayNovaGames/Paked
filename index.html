@@ -124,7 +124,7 @@ function hasLocalBuilds(){ return getBuildList().length>0; }
 function hasDownloadableBuilds(){ return currentDownloadableBuilds.length>0; }
 
 function loadLocalBuilds(){
-  const builds = getBuildList();
+  const builds = getBuildList().sort(compareVersionsDesc); // ✅ sort newest first
   const div = document.getElementById("localBuilds"); div.innerHTML="";
   if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloaded builds yet.</div>"; checkDividerVisibility(); return; }
   builds.forEach(v=>{
@@ -145,6 +145,15 @@ function loadLocalBuilds(){
     item.appendChild(actions); 
     div.appendChild(item);
   });
+}
+
+// --- Sorting functions ---
+function parseVersion(str) {
+  const match = str.match(/v?(\d+(?:\.\d+)?)/i);
+  return match ? parseFloat(match[1]) : 0;
+}
+function compareVersionsDesc(a, b) {
+  return parseVersion(b) - parseVersion(a); // ✅ newest (largest) first
 }
 
 // --- Side panel ---
@@ -182,7 +191,10 @@ async function fetchAvailableBuilds(){
     const res = await fetch(WORKER_URL+"list");
     if(!res.ok) throw new Error("Failed to fetch builds");
     const builds = await res.json();
-    currentDownloadableBuilds = builds.sort((a,b)=>compareVersions(b,a));
+
+    // ✅ sort newest (highest version) first
+    currentDownloadableBuilds = builds.sort(compareVersionsDesc);
+
     if(builds.length===0){ div.innerHTML="<div style='padding:10px;color:#888;'>No downloadable builds found.</div>"; return; }
 
     currentDownloadableBuilds.forEach(v=>{
@@ -261,16 +273,12 @@ function closeIframe(){
 
 document.getElementById("iframeContainer").addEventListener("click", e=>{ if(e.target.id==="iframeContainer") closeIframe(); });
 
-function compareVersions(a,b){
-  const pa=a.split(".").map(n=>parseInt(n,10)); const pb=b.split(".").map(n=>parseInt(n,10));
-  for(let i=0;i<Math.max(pa.length,pb.length);i++){ const na=pa[i]||0; const nb=pb[i]||0; if(na!==nb) return na-nb; return 0; }
-}
-
+// ✅ Fixed playLatestBuild to use sorted order
 function playLatestBuild(){
   if(currentDownloadableBuilds.length>0) playBuild(currentDownloadableBuilds[0]);
-  else{
-    const builds = getBuildList();
-    if(builds.length>0) playLocalBuild(builds[builds.length-1]);
+  else {
+    const builds = getBuildList().sort(compareVersionsDesc);
+    if(builds.length>0) playLocalBuild(builds[0]);
     else alert("No builds available.");
   }
 }
