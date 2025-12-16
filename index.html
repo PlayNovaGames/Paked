@@ -170,28 +170,15 @@ body, html {
   <iframe id="gameIframe"></iframe>
 </div>
 
-<div id="messageBoxOverlay" class="message-box-overlay">
-  <div class="message-box">
-    <h3 id="messageTitle"></h3>
-    <p id="messageText"></p>
-    <div class="message-box-buttons">
-      <button class="primary" id="retryBtn">Try Again</button>
-      <button id="onlineBtn">Run Online</button>
-      <button class="danger" id="cancelBtn">Cancel</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const WORKER_URL = "https://paked.proliverplays.workers.dev/";
-let db;
 let currentDownloadableBuilds = [];
 
-/* ---------- VERSION SORT (FIXED) ---------- */
-function parseVersion(str) {
-  const match = str.match(/v\s*(\d+(?:\.\d+)*)/i);
-  if (!match) return [0];
-  return match[1].split('.').map(n => parseInt(n, 10));
+/* ===== MINIMAL FIX: proper semantic version sorting ===== */
+function parseVersion(name) {
+  const m = name.match(/v(\d+(?:\.\d+)*)/i);
+  if (!m) return [0];
+  return m[1].split(".").map(n => parseInt(n, 10));
 }
 
 function compareVersionsDesc(a, b) {
@@ -199,19 +186,11 @@ function compareVersionsDesc(a, b) {
   const vb = parseVersion(b);
   const len = Math.max(va.length, vb.length);
   for (let i = 0; i < len; i++) {
-    const na = va[i] || 0;
-    const nb = vb[i] || 0;
-    if (na !== nb) return nb - na;
+    const da = va[i] || 0;
+    const db = vb[i] || 0;
+    if (da !== db) return db - da;
   }
   return 0;
-}
-
-/* ---------- STORAGE ---------- */
-function getBuildList() {
-  return JSON.parse(localStorage.getItem("pakedBuilds")) || [];
-}
-function saveBuildList(list) {
-  localStorage.setItem("pakedBuilds", JSON.stringify(list));
 }
 
 /* ---------- UI ---------- */
@@ -224,7 +203,7 @@ async function fetchAvailableBuilds() {
   const res = await fetch(WORKER_URL + "list");
   const builds = await res.json();
 
-  currentDownloadableBuilds = [...builds].sort(compareVersionsDesc);
+  currentDownloadableBuilds = builds.sort(compareVersionsDesc);
 
   const div = document.getElementById("downloadableBuilds");
   div.innerHTML = "";
@@ -233,24 +212,20 @@ async function fetchAvailableBuilds() {
     const item = document.createElement("div");
     item.className = "build-item downloadable";
     item.textContent = v.replace(/\.html$/i, "");
-    item.onclick = () => playBuild(v);
+    item.onclick = () => runOnlineVersion(v);
     div.appendChild(item);
   });
 
   document.getElementById("downloadableBuildsSection").classList.remove("hidden");
 }
 
-/* ---------- PLAY ---------- */
+/* ===== MINIMAL FIX: play newest build ===== */
 function playLatestBuild() {
-  if (currentDownloadableBuilds.length === 0) {
+  if (!currentDownloadableBuilds.length) {
     alert("No builds available");
     return;
   }
-  playBuild(currentDownloadableBuilds[0]); // newest
-}
-
-function playBuild(version) {
-  runOnlineVersion(version);
+  runOnlineVersion(currentDownloadableBuilds[0]);
 }
 
 /* ---------- ONLINE RUN ---------- */
@@ -261,7 +236,6 @@ function runOnlineVersion(version) {
   document.getElementById("iframeContainer").classList.add("visible");
 }
 
-/* ---------- INIT ---------- */
 window.onload = fetchAvailableBuilds;
 </script>
 </body>
