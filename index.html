@@ -164,20 +164,60 @@ async function fetchAvailableBuilds(){
 
 // Download
 async function downloadBuild(version){
-  const pb=document.getElementById("progressBar"),pf=document.getElementById("progressFill");
-  pb.style.display="block";pf.style.width="0%";
+  const pb=document.getElementById("progressBar"),
+        pf=document.getElementById("progressFill");
+
+  pb.style.display="block";
+  pf.style.width="0%";
+
   try{
     const fn=version.endsWith(".html")?version:version+".html";
     const res=await fetch(WORKER_URL+encodeURIComponent(fn));
-    if(!res.ok)throw new Error("Download failed");
-    const reader=res.body.getReader(),len=+res.headers.get("Content-Length"),chunks=[];let rec=0;
-    while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);rec+=value.length;if(len)pf.style.width=Math.floor(rec/len*100)+"%";}
+    if(!res.ok) throw new Error("Download failed");
+
+    const reader=res.body.getReader();
+    const len=Number(res.headers.get("Content-Length")) || 0;
+
+    let received=0;
+    const chunks=[];
+
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+
+      chunks.push(value);
+      received+=value.length;
+
+      if(len){
+        const percent=Math.min(100,Math.round((received/len)*100));
+        requestAnimationFrame(()=>{ pf.style.width=percent+"%"; });
+      }
+    }
+
+    // Ensure it finishes at 100%
+    requestAnimationFrame(()=>{ pf.style.width="100%"; });
+
     const html=await new Blob(chunks,{type:"text/html"}).text();
     await saveBuild(version,html);
-    const list=getBuildList();if(!list.includes(version)){list.push(version);saveBuildList(list);}
-    loadLocalBuilds();fetchAvailableBuilds();
-  }catch(e){console.error(e);showMessageBox(version,()=>downloadBuild(version),()=>runOnlineVersion(version));}
-  pb.style.display="none";
+
+    const list=getBuildList();
+    if(!list.includes(version)){
+      list.push(version);
+      saveBuildList(list);
+    }
+
+    loadLocalBuilds();
+    fetchAvailableBuilds();
+
+  }catch(e){
+    console.error(e);
+    showMessageBox(version,()=>downloadBuild(version),()=>runOnlineVersion(version));
+  }
+
+  setTimeout(()=>{
+    pb.style.display="none";
+    pf.style.width="0%";
+  },300);
 }
 
 // Run Online Version — fullscreen direct load
