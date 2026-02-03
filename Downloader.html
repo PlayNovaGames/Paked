@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Paked HTML Downloader</title>
+  <link rel="icon" href="https://playnovagames.github.io/Paked/favicon.ico" type="image/x-icon">
+  <link rel="shortcut icon" href="https://playnovagames.github.io/Paked/favicon.ico" type="image/x-icon">
+  <style>
+  </style>
+</head>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #1e1e2f;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    /* Main card */
+    .launcher {
+      width: 380px;
+      padding: 24px 26px 22px;
+      background: #2c2c3c;
+      border-radius: 18px;
+      border: 1px solid #444;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.03),
+        0 18px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      opacity: 0.7;
+      margin-top: -8px;
+    }
+
+    button {
+      margin-top: 8px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 500;
+      background: #76c7c0;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      color: #0e2b29;
+      transition: background 0.15s ease, transform 0.08s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background: #8edbd5;
+      transform: translateY(-1px);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    /* Progress container */
+    #progressContainer {
+      width: 100%;
+      height: 18px;
+      background: #3a3a4a;
+      border-radius: 999px;
+      overflow: hidden;
+      display: none;
+      border: 1px solid #444;
+    }
+
+    #progressBar {
+      height: 100%;
+      width: 40%;
+      background: linear-gradient(
+        90deg,
+        #76c7c0,
+        #9be3dd,
+        #76c7c0
+      );
+      animation: loading 1.4s ease-in-out infinite;
+    }
+
+    @keyframes loading {
+      0%   { transform: translateX(-120%); }
+      100% { transform: translateX(260%); }
+    }
+
+    #status {
+      font-size: 13px;
+      color: #ccc;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="launcher">
+    <div class="title">Paked</div>
+    <div class="subtitle">HTML Downloader</div>
+
+    <button id="downloadBtn">Download HTML</button>
+
+    <div id="progressContainer">
+      <div id="progressBar"></div>
+    </div>
+
+    <div id="status">Idle</div>
+  </div>
+
+  <script>
+    const url = "https://paked.proliverplays.workers.dev/latest";
+    const button = document.getElementById("downloadBtn");
+    const progressContainer = document.getElementById("progressContainer");
+    const status = document.getElementById("status");
+
+    function bytesToMB(bytes) {
+      return (bytes / (1024 * 1024)).toFixed(2);
+    }
+
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      progressContainer.style.display = "block";
+      status.textContent = "Starting download...";
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        status.textContent = "Download failed.";
+        progressContainer.style.display = "none";
+        button.disabled = false;
+        return;
+      }
+
+      const reader = response.body.getReader();
+      let received = 0;
+      const chunks = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        received += value.length;
+        status.textContent = `Downloading... ${bytesToMB(received)} MB`;
+      }
+
+      const blob = new Blob(chunks, { type: "text/html" });
+      const downloadUrl = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = "paked.html";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      progressContainer.style.display = "none";
+      status.textContent = `Download complete (${bytesToMB(received)} MB)`;
+      button.disabled = false;
+    });
+  </script>
+
+</body>
+</html>
