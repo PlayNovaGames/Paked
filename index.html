@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self' blob: data:;
+  script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob: https://playnovagames.github.io https://extensions.turbowarp.org;
+  connect-src 'self' * data: blob:;
+  frame-src 'self' https://paked.proliverplays.workers.dev;
+  object-src 'none';
+  base-uri 'none';
+">
 <title>Paked Launcher</title>
 <link rel="icon" href="https://playnovagames.github.io/Paked/favicon.ico" type="image/x-icon">
 <link rel="shortcut icon" href="https://playnovagames.github.io/Paked/favicon.ico" type="image/x-icon">
@@ -69,7 +79,7 @@
   </div>
 </div>
 
-<div id="iframeContainer" class="iframe-overlay"><iframe id="gameIframe"></iframe></div>
+<div id="iframeContainer" class="iframe-overlay"><iframe id="gameIframe" sandbox="allow-scripts allow-same-origin"></iframe></div>
 
 <div id="messageBoxOverlay" class="message-box-overlay">
   <div class="message-box">
@@ -252,4 +262,3 @@ window.onload=async()=>{await openDB();loadLocalBuilds();fetchAvailableBuilds();
 </script>
 </body>
 </html>
-
